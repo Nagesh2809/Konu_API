@@ -4,6 +4,10 @@ from geopy.distance import geodesic
 
 app = Flask(__name__)
 
+@app.route('/')
+def home():
+    return jsonify({"message": "Welcome to the Real Estate API. Use /available_properties, /budget_properties, etc., to fetch data."})
+
 # Load the dataset
 df = pd.read_csv('Datasampling-konu - Sheet1.csv')
 
@@ -217,16 +221,50 @@ def available_properties():
         location = location.lower()
 
         # Filter properties by location (case-insensitive)
-        filtered_df = df[df['address'] == location]
+        filtered_df = df[df['address'] == location].copy()
 
         if filtered_df.empty:
             return jsonify({"message": "No properties available in this location"}), 404
+
+        # Ensure 'new price', 'size', and 'final_price' are numeric
+        filtered_df['new price'] = pd.to_numeric(filtered_df['new price'], errors='coerce')
+        filtered_df['size'] = pd.to_numeric(filtered_df['size'], errors='coerce')
+        filtered_df['final_price'] = pd.to_numeric(filtered_df['final_price'], errors='coerce')
+
+        # Select relevant columns, including final_price
+        columns_to_return = ['project name', 'type', 'new price', 'final_price', 'size', 'BHK', 'pincode', 'address', 'city', 'RERA Approved']
+        filtered_df = filtered_df[columns_to_return]
 
         return jsonify(filtered_df.to_dict(orient='records'))
 
     except Exception as e:
         print(f"Error occurred in available_properties endpoint: {str(e)}")
         return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
+
+
+# @app.route('/available_properties', methods=['GET'])
+# def available_properties():
+#     try:
+#         location = request.args.get('location')
+
+#         if not location:
+#             return jsonify({"error": "Location parameter is required"}), 400
+
+#         # Convert location and address column to lowercase for case-insensitive filtering
+#         df['address'] = df['address'].str.lower()
+#         location = location.lower()
+
+#         # Filter properties by location (case-insensitive)
+#         filtered_df = df[df['address'] == location]
+
+#         if filtered_df.empty:
+#             return jsonify({"message": "No properties available in this location"}), 404
+
+#         return jsonify(filtered_df.to_dict(orient='records'))
+
+#     except Exception as e:
+#         print(f"Error occurred in available_properties endpoint: {str(e)}")
+#         return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
     
 @app.route('/budget_properties', methods=['GET'])
 def budget_properties():
