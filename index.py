@@ -1,6 +1,11 @@
+# python index1.py
+
 from flask import Flask, request, jsonify
 import pandas as pd
 from geopy.distance import geodesic
+
+# Define standard columns to return in all responses
+DEFAULT_COLUMNS = ['project name', 'type', 'new price', 'final_price', 'size', 'BHK', 'pincode', 'address', 'city', 'RERA Approved']
 
 app = Flask(__name__)
 
@@ -16,15 +21,14 @@ def price_conversion(amount):
 
     def convert_to_crore(amount):
         return round(amount / 10000000, 2)
-
-    # Ensure the conversion is correct or skip the conversion entirely.
+    
     min_crore = convert_to_crore(amount[0]) if amount[0] else amount[0]
     max_crore = convert_to_crore(amount[1]) if amount[1] else amount[1]
     return [min_crore, max_crore]
 
 
 class Rules:
-    def __init__(self) -> None:
+    def __init__(self):
         self.df = df
         self.min_price = None
         self.max_price = None
@@ -49,7 +53,7 @@ class Rules:
             raise ValueError("Pincode must be an integer")
 
     def expected_min_max(self):
-        # Convert 'new price' to numeric, coercing errors
+
         self.df['new price'] = pd.to_numeric(self.df['new price'], errors='coerce')
         min_max = self.df['new price'].dropna()
         self.min_price = min_max.min() if not min_max.empty else 0
@@ -62,21 +66,23 @@ class Rules:
             raise ValueError("Rooms must be a positive integer")
 
     def area_price(self, area):
+
         if isinstance(area, (int, float)) and area > 0:
-            # Store the total area value
+
             self.area = area
 
-            # Validate that min_price and max_price are numeric
+
             if not isinstance(self.min_price, (int, float)):
                 self.min_price = float(self.min_price) if self.min_price else 0.0
+
             if not isinstance(self.max_price, (int, float)):
                 self.max_price = float(self.max_price) if self.max_price else 0.0
 
-            # Adjust min_price and max_price based on area
+
             self.min_price *= area
             self.max_price *= area
 
-            # Ensure that min_price is always less than max_price
+
             if self.min_price > self.max_price:
                 self.min_price, self.max_price = self.max_price, self.min_price
         else:
@@ -91,45 +97,47 @@ class Rules:
     def commercial_Spaces(self):
         self.df = self.df[self.df['type'] == 'Commercial Spaces']
 
-    
+
     def filter_by_lat_long(self, lat, long, radius_km=2):
-    # Ensure 'price' column exists in the DataFrame
+        
         if 'new price' not in self.df.columns:
             raise ValueError("'new price' column not found in the properties data")
-
-    # Drop rows with NaN latitude/longitude
+        
         self.df = self.df.dropna(subset=['latitude', 'longitude'])
 
         if isinstance(lat, (int, float)) and isinstance(long, (int, float)):
+
             def is_within_range(row):
+
                 try:
-                    property_coords = (float(row['latitude']), float(row['longitude']))
+                    property_coords = (float(row['latitude']),float(row['longitude']))
                     user_coords = (lat, long)
                     distance = geodesic(user_coords, property_coords).km
                     return distance <= radius_km
+                
                 except Exception as e:
                     print(f"Error processing row: {row}, Error: {e}")
                     return False
-
-        # Filter the properties by applying the distance check
+                
             self.df = self.df[self.df.apply(is_within_range, axis=1)]
         else:
             raise ValueError("Latitude and Longitude must be numeric")
 
     def return_df(self):
         return self.df
-
+    
 
 
 @app.route('/filter_properties/', methods=['GET'])
 def filter_properties():
+
     try:
-        # Get filters from query parameters
+
         filters = request.args
 
         rules = Rules()
 
-        # Apply filters
+
         if 'city' in filters:
             rules.select_city(filters.get('city'))
 
@@ -141,7 +149,7 @@ def filter_properties():
                 rules.pincode_filter(int(filters.get('pincode')))
             except (ValueError, TypeError):
                 return jsonify({"error": "Pincode must be an integer"}), 400
-
+            
         if 'property_category' in filters:
             property_category = filters.get('property_category')
             if property_category == 'Gated community':
@@ -156,23 +164,23 @@ def filter_properties():
                 rules.bedroom_price(int(filters.get('bhk')))
             except (ValueError, TypeError):
                 return jsonify({"error": "Bedrooms must be a positive integer"}), 400
-
+            
         if 'area' in filters:
             try:
                 area = float(filters.get('area'))
                 if area <= 0:
                     raise ValueError("Area must be greater than 0.")
-                # Calculate min and max prices before area adjustment
+                
                 rules.expected_min_max()
                 rules.area_price(area)
             except ValueError as ve:
                 return jsonify({"error": "Invalid area value", "message": str(ve)}), 400
         else:
-            # Calculate min and max prices without area adjustment
+
             rules.expected_min_max()
             rules.area_price(1.0)
 
-        # Get the filtered dataframe
+
         filtered_properties = rules.return_df()
 
         if filtered_properties.empty:
@@ -182,7 +190,7 @@ def filter_properties():
                 "max_price": rules.max_price
             }), 404
 
-        # Pagination logic
+        filtered_properties = filtered_properties[DEFAULT_COLUMNS]  # Ensure final_price is included
         try:
             page = int(filters.get('page', 1))
             page_size = int(filters.get('page_size', 10))
@@ -193,10 +201,10 @@ def filter_properties():
         end = start + page_size
         current_properties_page = filtered_properties[start:end]
 
-        # Convert DataFrame to JSON
+
         properties_list = current_properties_page.to_dict(orient="records")
 
-        # Return the filtered properties along with min and max prices
+
         return jsonify({
             "properties": properties_list,
             "min_price": rules.min_price,
@@ -212,29 +220,20 @@ def filter_properties():
 def available_properties():
     try:
         location = request.args.get('location')
-
+        
         if not location:
             return jsonify({"error": "Location parameter is required"}), 400
 
-        # Convert location and address column to lowercase for case-insensitive filtering
+        
         df['address'] = df['address'].str.lower()
         location = location.lower()
-
-        # Filter properties by location (case-insensitive)
+        
         filtered_df = df[df['address'] == location].copy()
 
         if filtered_df.empty:
             return jsonify({"message": "No properties available in this location"}), 404
 
-        # Ensure 'new price', 'size', and 'final_price' are numeric
-        filtered_df['new price'] = pd.to_numeric(filtered_df['new price'], errors='coerce')
-        filtered_df['size'] = pd.to_numeric(filtered_df['size'], errors='coerce')
-        filtered_df['final_price'] = pd.to_numeric(filtered_df['final_price'], errors='coerce')
-
-        # Select relevant columns, including final_price
-        columns_to_return = ['project name', 'type', 'new price', 'final_price', 'size', 'BHK', 'pincode', 'address', 'city', 'RERA Approved']
-        filtered_df = filtered_df[columns_to_return]
-
+        filtered_df = filtered_df[DEFAULT_COLUMNS]  # Ensure final_price is included
         return jsonify(filtered_df.to_dict(orient='records'))
 
     except Exception as e:
@@ -242,55 +241,29 @@ def available_properties():
         return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
 
 
-# @app.route('/available_properties', methods=['GET'])
-# def available_properties():
-#     try:
-#         location = request.args.get('location')
 
-#         if not location:
-#             return jsonify({"error": "Location parameter is required"}), 400
-
-#         # Convert location and address column to lowercase for case-insensitive filtering
-#         df['address'] = df['address'].str.lower()
-#         location = location.lower()
-
-#         # Filter properties by location (case-insensitive)
-#         filtered_df = df[df['address'] == location]
-
-#         if filtered_df.empty:
-#             return jsonify({"message": "No properties available in this location"}), 404
-
-#         return jsonify(filtered_df.to_dict(orient='records'))
-
-#     except Exception as e:
-#         print(f"Error occurred in available_properties endpoint: {str(e)}")
-#         return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
-    
 @app.route('/budget_properties', methods=['GET'])
 def budget_properties():
     try:
-        # Get the query parameters
-        locality = request.args.get('locality')  # Changed 'area' to 'locality'
+        locality = request.args.get('locality')
         budget = request.args.get('budget')
 
         if not locality or not budget:
             return jsonify({"error": "Locality and budget parameters are required"}), 400
 
         try:
-            budget = float(budget)  # Convert budget to float
+            budget = float(budget)
         except ValueError:
             return jsonify({"error": "Invalid budget value. Budget must be a number"}), 400
 
-        # Convert 'new price' column to numeric (if not already done)
+        
         df['new price'] = pd.to_numeric(df['new price'], errors='coerce')
-
-        # Filter properties by locality and budget (case-insensitive)
-        locality = locality.lower()  # Convert locality to lowercase for case-insensitive filtering
-        filtered_df = df[(df['address'].str.lower() == locality) & (df['new price'] <= budget)]
+        filtered_df = df[(df['address'].str.lower() == locality.lower()) & (df['new price'] <= budget)]
 
         if filtered_df.empty:
             return jsonify({"message": "No properties found under the specified budget in this locality"}), 404
 
+        filtered_df = filtered_df[DEFAULT_COLUMNS]  # Ensure final_price is included
         return jsonify(filtered_df.to_dict(orient='records'))
 
     except Exception as e:
@@ -302,7 +275,7 @@ def budget_properties():
 def project_price():
     try:
         project_name = request.args.get('project_name')
-        area = request.args.get('area', 1.0)  # Default area to 1.0 if not provided
+        area = request.args.get('area', 1.0)
 
         if not project_name:
             return jsonify({"error": "Project name is required"}), 400
@@ -314,26 +287,24 @@ def project_price():
         except ValueError:
             return jsonify({"error": "Invalid area value. Must be a number"}), 400
 
-        # Convert project name column to lowercase for case-insensitive filtering
+        
         df['project name'] = df['project name'].str.strip().str.lower()
-
-        # Filter dataframe by project name
+        
         filtered_df = df[df['project name'].str.strip().str.lower() == project_name.strip().lower()]
 
         if filtered_df.empty:
             return jsonify({"message": "No project found with the given name"}), 404
 
-        # Convert 'new price' to numeric
+        
         filtered_df['new price'] = pd.to_numeric(filtered_df['new price'], errors='coerce')
         
         if filtered_df['new price'].isna().all():
             return jsonify({"message": "Price information not available for this project"}), 404
 
-        # Apply area multiplier to new price
+        
         filtered_df['adjusted_price_with_area'] = filtered_df['new price'] * area
-
-        # Return project details with price
-        return jsonify(filtered_df[['project name', 'new price', 'adjusted_price_with_area']].to_dict(orient='records'))
+        filtered_df = filtered_df[DEFAULT_COLUMNS + ['adjusted_price_with_area']]  # Include final_price and adjusted price
+        return jsonify(filtered_df.to_dict(orient='records'))
 
     except Exception as e:
         print(f"Error in project_price endpoint: {str(e)}")
@@ -341,60 +312,55 @@ def project_price():
 
 @app.route('/market_value', methods=['GET'])
 def market_value():
-    location = request.args.get('location')
-    property_category = request.args.get('property_category')
+    try:
+        location = request.args.get('location')
+        property_category = request.args.get('property_category')
 
-    if not location:
-        return jsonify({"error": "Location parameter is required"}), 400
+        if not location:
+            return jsonify({"error": "Location parameter is required"}), 400
 
-    # Normalize location to lowercase to make it case-insensitive
-    location = location.strip().lower()
+        location = location.strip().lower()
+        filtered_df = df[df['address'].str.strip().str.lower() == location]
 
-    # Filter by location (case-insensitive)
-    filtered_df = df[df['address'].str.strip().str.lower() == location]
+        if property_category:
+            property_category = property_category.strip().lower()
+            filtered_df = filtered_df[filtered_df['type'].str.strip().str.lower() == property_category]
 
-    # Print for debugging
-    print(f"Filtering by location: {location}")
+        if filtered_df.empty:
+            return jsonify({"message": "No data available for the specified location and property category"}), 404
 
-    # Further filter by property category if provided
-    if property_category:
-        # Strip and convert property category to lowercase for comparison
-        property_category = property_category.strip().lower()
-        print(f"Filtering by property category: {property_category}")
-        filtered_df = filtered_df[filtered_df['type'].str.strip().str.lower() == property_category]
+        filtered_df['new price'] = pd.to_numeric(filtered_df['new price'], errors='coerce')
+        min_price = filtered_df['new price'].min()
+        max_price = filtered_df['new price'].max()
+        mean_price = filtered_df['new price'].mean()
+        median_price = filtered_df['new price'].median()
+        mode_price = filtered_df['new price'].mode().iloc[0] if not filtered_df['new price'].mode().empty else None
 
-    if filtered_df.empty:
-        return jsonify({"message": "No data available for the specified location and property category"}), 404
+        filtered_df = filtered_df[DEFAULT_COLUMNS]  # Ensure final_price is included
+        return jsonify({
+            "location": location,
+            "property_category": property_category or "All Categories",
+            "min_price": int(min_price),
+            "max_price": int(max_price),
+            "mean_price": float(mean_price),
+            "median_price": float(median_price),
+            "mode_price": float(mode_price) if mode_price else None,
+            "properties": filtered_df.to_dict(orient='records')  # Include properties with final_price
+        })
 
-    # Convert 'new price' to numeric to avoid issues
-    filtered_df['new price'] = pd.to_numeric(filtered_df['new price'], errors='coerce')
-
-    # Calculate statistics
-    min_price = filtered_df['new price'].min()
-    max_price = filtered_df['new price'].max()
-    mean_price = filtered_df['new price'].mean()
-    median_price = filtered_df['new price'].median()
-    mode_price = filtered_df['new price'].mode().iloc[0] if not filtered_df['new price'].mode().empty else None
-
-    return jsonify({
-        "location": location,
-        "property_category": property_category or "All Categories",
-        "min_price": int(min_price),
-        "max_price": int(max_price),
-        "mean_price": float(mean_price),
-        "median_price": float(median_price),
-        "mode_price": float(mode_price) if mode_price else None,
-    })
+    except Exception as e:
+        print(f"Error in market_value endpoint: {str(e)}")
+        return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
 
 @app.route('/properties_near', methods=['GET'])
 def properties_near():
     try:
-        # Get latitude, longitude, and radius from the query parameters
+
         lat = request.args.get('latitude')
         long = request.args.get('longitude')
-        radius = request.args.get('radius', 2)  # Default radius to 2 if not provided
+        radius = request.args.get('radius', 2)
 
-        # Validate that latitude, longitude, and radius are provided and numeric
+        
         try:
             lat = float(lat)
             long = float(long)
@@ -402,7 +368,7 @@ def properties_near():
         except (TypeError, ValueError):
             return jsonify({"error": "Latitude, longitude, and radius must be valid numbers"}), 400
 
-        # Check if latitude and longitude are within valid ranges
+        
         if not (-90 <= lat <= 90):
             return jsonify({"error": "Latitude must be between -90 and 90"}), 400
         if not (-180 <= long <= 180):
@@ -410,62 +376,33 @@ def properties_near():
         if radius_km <= 0:
             return jsonify({"error": "Radius must be a positive number"}), 400
 
-        # Debugging: Print the received values
-        print(f"Received parameters: latitude={lat}, longitude={long}, radius={radius_km}")
-
-        # Filter the properties by their distance from the given coordinates
+        
         rules = Rules()
         rules.filter_by_lat_long(lat, long, radius_km)
         filtered_properties = rules.return_df()
 
-        # Debugging: Print the columns of the DataFrame
-        print(f"Columns in filtered_properties: {filtered_properties.columns}")
+        if filtered_properties.empty:
+            return jsonify({"message": "No properties found within the specified radius"}), 404
 
-        # Ensure 'new price' column exists
-        if 'new price' not in filtered_properties.columns:
-            return jsonify({"error": "'new price' column not found in the properties data"}), 400
-
-        # Convert 'new price' to numeric, invalid values will be NaN
-        filtered_properties['new price'] = pd.to_numeric(filtered_properties['new price'], errors='coerce')
-
-        # Drop rows where 'new price' is NaN
-        filtered_properties = filtered_properties.dropna(subset=['new price'])
-
-        # Calculate the price statistics (min, max, mean, median, mode)
-        price_stats = {
-            "min_price": float(filtered_properties['new price'].min()),  # Convert to float
-            "max_price": float(filtered_properties['new price'].max()),  # Convert to float
-            "mean_price": float(filtered_properties['new price'].mean()),  # Convert to float
-            "median_price": float(filtered_properties['new price'].median()),  # Convert to float
-            "mode_price": float(filtered_properties['new price'].mode())  # Mode 
-        }
-
-        # Return the statistics along with the filtered properties
-        return jsonify({
-            "min_price": price_stats["min_price"],
-            "max_price": price_stats["max_price"],
-            "mean_price": price_stats["mean_price"],
-            "median_price": price_stats["median_price"],
-            "mode_price": price_stats["mode_price"],
-            "properties": filtered_properties.to_dict(orient='records')
-        })
+        filtered_properties = filtered_properties[DEFAULT_COLUMNS]  # Ensure final_price is included
+        return jsonify(filtered_properties.to_dict(orient='records'))
 
     except Exception as e:
-        # Catch all errors and print the exception for debugging
+
         print(f"Error occurred: {str(e)}")
         return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
-        
+
 
 @app.route('/properties_near_metro_station', methods=['GET'])
 def properties_near_metro_station():
     try:
         station_name = request.args.get('station_name')
-        radius = request.args.get('radius', 2)  # Default to 2 km if not provided
+        radius = request.args.get('radius', 2)
 
         if not station_name:
             return jsonify({"error": "Metro station name is required"}), 400
 
-        # Hardcoded metro stations for demonstration
+
         metro_stations = {
             "Ameerpet": (17.434803, 78.448011),
             "Assembly": (17.3978004, 78.4699168),
@@ -507,7 +444,7 @@ def properties_near_metro_station():
             "New Market": (17.3734, 78.5031),
             "NGRI": (17.41483, 78.54634),
             "Osmania Medical College": (17.382389, 78.478957),
-            "Parade Grounds": (	17.436793, 78.443906),
+            "Parade Grounds": (17.436793, 78.443906),
             "Paradise": (17.4435274, 78.4850961),
             "Peddamma Gudi": (17.43065, 78.40837),
             "Prakash Nagar": (17.4425252, 78.4704161),
@@ -526,7 +463,7 @@ def properties_near_metro_station():
             "Yusufguda": (17.435083, 78.426528)
         }
 
-        # Normalize station_name to title case
+
         station_name = station_name.strip().title()
 
         station_coords = metro_stations.get(station_name)
@@ -539,29 +476,30 @@ def properties_near_metro_station():
 
         rules = Rules()
         rules.filter_by_lat_long(lat, long, radius_km)
-
+      
         filtered_properties = rules.return_df()
 
         if filtered_properties.empty:
             return jsonify({"message": "No properties found near the specified metro station"}), 404
 
+        filtered_properties = filtered_properties[DEFAULT_COLUMNS]  # Ensure final_price is included
         return jsonify(filtered_properties.to_dict(orient='records'))
 
     except Exception as e:
         print(f"Error: {str(e)}")
         return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
-    
+
 
 @app.route('/properties_near_it_hub', methods=['GET'])
 def properties_near_it_hub():
     try:
         hub_name = request.args.get('hub_name')
-        radius = request.args.get('radius', 2)  # Default to 2 km if not provided
+        radius = request.args.get('radius', 2)
 
         if not hub_name:
             return jsonify({"error": "Hub name is required"}), 400
 
-        # Hardcoded IT hubs for demonstration
+
         it_hubs = {
             "Hitec City": (17.44155, 78.38264),
             "Madhapur": (17.448294, 78.391487),
@@ -570,14 +508,14 @@ def properties_near_it_hub():
             "Financial District": (17.4117312, 78.3424898),
             "Nanakramguda": (17.4117312, 78.3424898),
             "Manikonda": (17.4000018, 78.3861896794107),
-            "Raidurg": ( 17.416315, 78.389847),
+            "Raidurg": (17.416315, 78.389847),
             "Uppal": (17.401810, 78.560188),
             "Pocharam": (17.173595, 78.607178)
         }
 
-        # Normalize hub_name to title case
-        hub_name = hub_name.strip().title()
 
+        hub_name = hub_name.strip().title()
+        
         hub_coords = it_hubs.get(hub_name)
 
         if not hub_coords:
@@ -588,28 +526,28 @@ def properties_near_it_hub():
 
         rules = Rules()
         rules.filter_by_lat_long(lat, long, radius_km)
-
+        
         filtered_properties = rules.return_df()
 
         if filtered_properties.empty:
             return jsonify({"message": "No properties found near the specified IT hub"}), 404
 
+        filtered_properties = filtered_properties[DEFAULT_COLUMNS]  # Ensure final_price is included
         return jsonify(filtered_properties.to_dict(orient='records'))
 
     except Exception as e:
         print(f"Error: {str(e)}")
         return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
 
-    
+
 @app.route('/rera_approved', methods=['GET'])
 def rera_approved_properties():
     try:
-        # Retrieve project_name and location from query parameters
+
         project_name = request.args.get('project_name', "").strip().lower()
         location = request.args.get('location', "").strip().lower()
 
-        # Check required columns
-        required_columns = ['RERA Approved', 'Project', 'address']
+        required_columns = ['RERA Approved', 'project name', 'address']  # Adjusted to match DEFAULT_COLUMNS
         for column in required_columns:
             if column not in df.columns:
                 return jsonify({
@@ -617,31 +555,32 @@ def rera_approved_properties():
                     "available_columns": list(df.columns)
                 }), 400
 
-        # Filter for RERA-approved properties
+
         rera_approved_df = df[df['RERA Approved'].str.strip().str.lower() == 'yes']
 
-        # If both project_name and location are not provided, return all RERA-approved properties
+
         if project_name == "" and location == "":
+            rera_approved_df = rera_approved_df[DEFAULT_COLUMNS]  # Ensure final_price is included
             properties = rera_approved_df.to_dict(orient='records')
             return jsonify({"rera_approved_properties": properties}), 200
 
-        # Apply project name filter if provided
+
         if project_name:
             rera_approved_df = rera_approved_df[
-                rera_approved_df['Project'].str.strip().str.lower().str.contains(project_name, na=False)
+                rera_approved_df['project name'].str.strip().str.lower().str.contains(project_name, na=False)
             ]
 
-        # Apply location filter if provided
+
         if location:
             rera_approved_df = rera_approved_df[
                 rera_approved_df['address'].str.strip().str.lower().str.contains(location, na=False)
             ]
 
-        # If no properties found after applying filters, return message
+
         if rera_approved_df.empty:
             return jsonify({"message": "No RERA-approved properties found matching the criteria"}), 404
 
-        # Convert to JSON and return
+        rera_approved_df = rera_approved_df[DEFAULT_COLUMNS]  # Ensure final_price is included
         properties = rera_approved_df.to_dict(orient='records')
         return jsonify({"rera_approved_properties": properties}), 200
 
@@ -654,16 +593,16 @@ def rera_approved_properties():
 @app.route('/calculate_emi', methods=['POST'])
 def get_emi():
     try:
-        # Get JSON data from the request
+
         data = request.get_json()
 
-        # Check if all required keys are present in the input
+
         required_keys = ['loan_amount', 'tenure_years', 'annual_interest_rate']
         missing_keys = [key for key in required_keys if key not in data]
         if missing_keys:
             return jsonify({"error": f"Missing input: {', '.join(missing_keys)}"}), 400
 
-        # Extract loan parameters from the request data
+
         try:
             loan_amount = float(data['loan_amount'])
             tenure_years = float(data['tenure_years'])
@@ -671,14 +610,13 @@ def get_emi():
         except ValueError:
             return jsonify({"error": "Invalid input types. All inputs must be numeric."}), 400
 
-        # Validate input values
+
         if loan_amount <= 0 or tenure_years <= 0 or annual_interest_rate <= 0:
             return jsonify({"error": "All input values must be positive numbers."}), 400
 
-        # Calculate EMI and total interest
-        emi, total_interest = calculate_emi(loan_amount, annual_interest_rate, tenure_years)
 
-        # Return result as JSON response
+        emi, total_interest = calculate_emi(loan_amount, annual_interest_rate, tenure_years)
+  
         return jsonify({
             "loan_amount": loan_amount,
             "annual_interest_rate": annual_interest_rate,
@@ -692,23 +630,22 @@ def get_emi():
 
 
 def calculate_emi(loan_amount, annual_interest_rate, tenure_years):
-    # Monthly interest rate
+    
     monthly_interest_rate = (annual_interest_rate / 100) / 12
 
-    # Total number of monthly payments
+
     total_months = tenure_years * 12
 
-    # EMI formula
+
     emi = (loan_amount * monthly_interest_rate * ((1 + monthly_interest_rate) ** total_months)) / (((1 + monthly_interest_rate) ** total_months) - 1)
-
-    # Total payment over the tenure
+    
     total_payment = emi * total_months
-
-    # Total interest
+    
     total_interest = total_payment - loan_amount
-
+    
     return emi, total_interest
 
 if __name__ == '__main__':
+    
+    
     app.run(host='0.0.0.0', port=5000)
-
