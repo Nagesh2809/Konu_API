@@ -257,8 +257,8 @@ def budget_properties():
             return jsonify({"error": "Invalid budget value. Budget must be a number"}), 400
 
         
-        df['new price'] = pd.to_numeric(df['new price'], errors='coerce')
-        filtered_df = df[(df['address'].str.lower() == locality.lower()) & (df['new price'] <= budget)]
+        df['final_price'] = pd.to_numeric(df['final_price'], errors='coerce')
+        filtered_df = df[(df['address'].str.lower() == locality.lower()) & (df['final_price'] <= budget)]
 
         if filtered_df.empty:
             return jsonify({"message": "No properties found under the specified budget in this locality"}), 404
