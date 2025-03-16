@@ -224,6 +224,9 @@ def available_properties():
         if not location:
             return jsonify({"error": "Location parameter is required"}), 400
 
+        # Replace '+' with space (in case URL encoding isn’t decoded) and normalize
+        location = location.replace('+', ' ').strip().lower()
+
         
         df['address'] = df['address'].str.lower()
         location = location.lower()
