@@ -336,10 +336,10 @@ def budget_properties():
             return jsonify({"error": "Locality and budget parameters are required"}), 400
         
         # Replace '%<number>' with a space
-        location = re.sub(r'%\d+', ' ', location)     
+        locality = re.sub(r'%\d+', ' ', locality)     
         
         # Normalize input
-        location = location.replace('+', ' ').strip().lower()   
+        locality = locality.replace('+', ' ').strip().lower()   
 
         try:
             budget = float(budget)  # Convert budget to float
