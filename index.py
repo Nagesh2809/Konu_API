@@ -236,7 +236,7 @@ def available_properties():
         location = re.sub(r'%\d+', ' ', location)
         
         # Normalize input
-        location = location.replace('+', ' ').strip().lower()
+        location = location.replace('+', ' ').strip('"').lower()
 
         # Fill NaN values
         df['address'] = df['address'].fillna('').str.lower()
@@ -339,7 +339,7 @@ def budget_properties():
         locality = re.sub(r'%\d+', ' ', locality)     
         
         # Normalize input
-        locality = locality.replace('+', ' ').strip().lower()   
+        locality = locality.replace('+', ' ').strip('"').lower()   
 
         try:
             budget = float(budget)  # Convert budget to float
@@ -381,7 +381,7 @@ def project_price():
         project_name = re.sub(r'%\d+', ' ', project_name)
         
         # Normalize input
-        project_name = project_name.replace('+', ' ').strip().lower()
+        project_name = project_name.replace('+', ' ').strip('"').lower()
 
         if not project_name:
             return jsonify({"error": "Project name is required"}), 400
@@ -430,7 +430,7 @@ def market_value():
     location = re.sub(r'%\d+', ' ', location)     # changed by Nagesh
         
     # Normalize input
-    location = location.replace('+', ' ').strip().lower()    # changed by Nagesh
+    location = location.replace('+', ' ').strip('"').lower()    # changed by Nagesh
 
     # Filter by location (case-insensitive)
     filtered_df = df[df['address'].str.strip().str.lower() == location]
@@ -554,7 +554,7 @@ def properties_near_metro_station():
         station_name = re.sub(r'%\d+', ' ', station_name)
         
         # Normalize input
-        station_name = station_name.replace('+', ' ').strip().title()
+        station_name = station_name.replace('+', ' ').strip('"').title()
 
         # Hardcoded metro stations for demonstration
         metro_stations = {
@@ -657,7 +657,7 @@ def properties_near_it_hub():
         hub_name = re.sub(r'%\d+', ' ', hub_name)
         
         # Normalize input
-        hub_name = hub_name.replace('+', ' ').strip().title()
+        hub_name = hub_name.replace('+', ' ').strip('"').title()
 
         # Hardcoded IT hubs for demonstration
         it_hubs = {
@@ -710,7 +710,7 @@ def rera_approved_properties():
         project_name = re.sub(r'%\d+', ' ', project_name)
         
         # Normalize input
-        project_name = project_name.replace('+', ' ').strip().lower()
+        project_name = project_name.replace('+', ' ').strip('"').lower()
 
 
 
