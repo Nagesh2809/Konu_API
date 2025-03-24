@@ -144,9 +144,9 @@ def filter_properties():
 
         rules = Rules()
 
-        # # Apply filters
-        # if 'city' in filters:
-        #     rules.select_city(filters.get('city'))
+        # Apply filters
+        if 'city' in filters:
+            rules.select_city(filters.get('city'))
 
         if 'locality' in filters:
             rules.select_locality(filters.get('locality'))
